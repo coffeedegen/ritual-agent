@@ -1,0 +1,26 @@
+{
+  "name": "crypto-analyst-agent",
+  "version": "1.0.0",
+  "description": "Persistent Crypto Market Analyst Agent on Ritual Chain",
+  "main": "index.js",
+  "scripts": {
+    "build": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.ts --network ritualTestnet",
+    "encrypt-secrets": "hardhat run scripts/encrypt_secrets.ts --network ritualTestnet",
+    "run-agent": "hardhat run scripts/run_agent.ts --network ritualTestnet",
+    "schedule-agent": "npx ts-node scripts/schedule_cron.ts"
+  },
+  "dependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.0.2",
+    "dotenv": "^16.4.5",
+    "eciesjs": "^0.4.8",
+    "hardhat": "^2.22.3",
+    "twitter-api-v2": "^1.29.1",
+    "viem": "^2.9.20"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "typescript": "^5.4.5"
+  }
+}

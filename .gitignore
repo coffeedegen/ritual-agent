@@ -1,0 +1,17 @@
+# Environment Variables
+.env
+.env.example
+.env.local
+
+# Node modules & build artifacts
+node_modules/
+dist/
+artifacts/
+cache/
+typechain-types/
+coverage/
+coverage.json
+
+# OS files
+.DS_Store
+*.log
