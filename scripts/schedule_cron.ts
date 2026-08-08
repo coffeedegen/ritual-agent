@@ -34,10 +34,11 @@ function getMsUntilNextTarget(): { ms: number; targetTimeStr: string } {
 
 function runLoop() {
   const { ms, targetTimeStr } = getMsUntilNextTarget();
-  console.log(`\n⏳ Next scheduled tweet at 8:00 PM/AM Manila Time (Target: ${targetTimeStr} PHT). Waiting ${Math.round(ms / 1000 / 60)} minutes...`);
+  const utcNow = new Date().toUTCString();
+  console.log(`\n⏳ Next scheduled tweet: 12:00 PM UTC / 00:00 UTC (Target: ${targetTimeStr} PHT / 12:00 UTC). Current UTC: ${utcNow}. Waiting ${Math.round(ms / 1000 / 60)} minutes...`);
   
   setTimeout(() => {
-    console.log(`\n🚀 [${new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" })} PHT] Triggering Scheduled 12-Hour Post...`);
+    console.log(`\n🚀 [${new Date().toUTCString()} / ${new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" })} PHT] Triggering Scheduled 12-Hour Post...`);
     try {
       execSync("npx hardhat run scripts/run_agent.ts --network ritualTestnet", { stdio: "inherit" });
     } catch (err: any) {
