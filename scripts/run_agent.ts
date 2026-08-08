@@ -129,56 +129,7 @@ async function main() {
   const apiUrl = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,hyperliquid&vs_currencies=usd&include_24hr_change=true";
   const ttl = 500n;
 
-  console.log("\n⚡ Atomic Batch Skill: Executing Escrow & Precompile Request in 1 Transaction...");
-  console.log("  - Target API:", apiUrl);
-  console.log("  - Target TEE Executor:", executorAddress);
-  console.log("  - Time-To-Live (TTL):", ttl.toString(), "blocks");
-
-  const walletAddress = process.env.RITUAL_WALLET || "0x532F0dF0896F353d8C3DD8cc134e8129DA2a3948";
-  const walletAbi = ["function lockUntil(address user) external view returns (uint256)"];
-  const ritualWallet = new ethers.Contract(walletAddress, walletAbi, signer);
-  const eoaLockUntil = await ritualWallet.lockUntil(signer.address).catch(() => 0n);
-
-  let jobId: string = "";
-  try {
-    const priorityGasPrice = 2000000000n;
-    const depositAmount = eoaLockUntil <= BigInt(currentBlock + 500) ? ethers.parseEther("0.5") : 0n;
-
-    // Call contract method (or fallback to requestMarketData if older deployment)
-    let tx;
-    if (typeof AgentContract.executeBatchDataPipeline === "function") {
-      tx = await AgentContract.executeBatchDataPipeline(
-        executorAddress,
-        ttl,
-        apiUrl,
-        [encryptedHex],
-        100000,
-        { value: depositAmount, gasLimit: 1200000n }
-      );
-    } else {
-      tx = await AgentContract.requestMarketData(
-        executorAddress,
-        ttl,
-        apiUrl,
-        [encryptedHex],
-        { gasLimit: 1000000n }
-      );
-    }
-
-    console.log("Atomic Transaction Submitted! TX Hash:", tx.hash);
-    console.log("Waiting for block confirmation (~10-15s)...");
-    const receipt = await tx.wait(1);
-    console.log("✅ Atomic Batch Request Mined in Block:", receipt?.blockNumber);
-    
-    const count = await AgentContract.getAnalysisCount();
-    jobId = await AgentContract.analysisJobIds(count - 1n);
-    console.log("Created Market Analysis Job ID:", jobId);
-  } catch (err: any) {
-    console.error("Execution error during request submission:", err.message || err);
-    process.exit(1);
-  }
-
-  // 5. Market Analysis & Direct Tweet Posting Execution to Twitter/X
+  // 4. Market Analysis & Direct Tweet Posting Execution to Twitter/X (INSTANT EXECUTION)
   console.log("\n==================================================");
   console.log("Performing Market Data Fetch & Publishing Tweet to X...");
   console.log("==================================================");
@@ -196,29 +147,46 @@ async function main() {
     const sol = priceData.solana;
     const hype = priceData.hyperliquid;
 
-    // Format Market Asset Data (Compliant with X API v2 cashtag policy)
-    const btcPrice = btc?.usd ? `${(btc.usd / 1000).toFixed(1)}k USD` : "65.0k USD";
-    const btcChange = btc?.usd_24h_change ? `${btc.usd_24h_change >= 0 ? '+' : ''}${btc.usd_24h_change.toFixed(1)}%` : "+0.6%";
+    // Asset Data Structures
+    const assets = [
+      { symbol: "BTC", price: btc?.usd ? `${(btc.usd / 1000).toFixed(1)}k USD` : "65.0k USD", change: btc?.usd_24h_change || 0, changeStr: btc?.usd_24h_change ? `${btc.usd_24h_change >= 0 ? '+' : ''}${btc.usd_24h_change.toFixed(1)}%` : "+0.6%" },
+      { symbol: "ETH", price: eth?.usd ? `${eth.usd.toFixed(0)} USD` : "1,916 USD", change: eth?.usd_24h_change || 0, changeStr: eth?.usd_24h_change ? `${eth.usd_24h_change >= 0 ? '+' : ''}${eth.usd_24h_change.toFixed(1)}%` : "+0.4%" },
+      { symbol: "SOL", price: sol?.usd ? `${sol.usd.toFixed(2)} USD` : "74.68 USD", change: sol?.usd_24h_change || 0, changeStr: sol?.usd_24h_change ? `${sol.usd_24h_change >= 0 ? '+' : ''}${sol.usd_24h_change.toFixed(1)}%` : "+2.1%" },
+      { symbol: "$HYPE", price: hype?.usd ? `${hype.usd.toFixed(2)} USD` : "54.43 USD", change: hype?.usd_24h_change || 0, changeStr: hype?.usd_24h_change ? `${hype.usd_24h_change >= 0 ? '+' : ''}${hype.usd_24h_change.toFixed(1)}%` : "-3.3%" }
+    ];
 
-    const ethPrice = eth?.usd ? `${eth.usd.toFixed(0)} USD` : "1,916 USD";
-    const ethChange = eth?.usd_24h_change ? `${eth.usd_24h_change >= 0 ? '+' : ''}${eth.usd_24h_change.toFixed(1)}%` : "+0.4%";
+    // Find asset with maximum 24h movement
+    const topMover = assets.reduce((prev, curr) => (Math.abs(curr.change) > Math.abs(prev.change) ? curr : prev), assets[0]);
 
-    const solPrice = sol?.usd ? `${sol.usd.toFixed(2)} USD` : "74.68 USD";
-    const solChange = sol?.usd_24h_change ? `${sol.usd_24h_change >= 0 ? '+' : ''}${sol.usd_24h_change.toFixed(1)}%` : "+2.1%";
+    let commentary = "";
+    let strategy = "";
 
-    const hypePrice = hype?.usd ? `${hype.usd.toFixed(2)} USD` : "54.43 USD";
-    const hypeChange = hype?.usd_24h_change ? `${hype.usd_24h_change >= 0 ? '+' : ''}${hype.usd_24h_change.toFixed(1)}%` : "-3.3%";
+    if (topMover.symbol === "$HYPE") {
+      if (topMover.change < 0) {
+        commentary = `Analysis: Hyperliquid leads market volatility (${topMover.changeStr} to ${topMover.price}). Healthy reset while BTC & SOL hold key support.`;
+        strategy = `Strategy: Accumulate HYPE on dips. Maintain long bias above 64.5k USD.`;
+      } else {
+        commentary = `Analysis: Hyperliquid leads market with ${topMover.changeStr} surge to ${topMover.price}. Outperformance signals strong demand.`;
+        strategy = `Strategy: Hold HYPE spot position. Trail stops on momentum.`;
+      }
+    } else if (topMover.symbol === "SOL") {
+      if (topMover.change > 0) {
+        commentary = `Analysis: SOL shows top strength (${topMover.changeStr} to ${topMover.price}). BTC & ETH consolidating smoothly.`;
+        strategy = `Strategy: Scale long SOL on pullbacks near 73 USD.`;
+      } else {
+        commentary = `Analysis: SOL retests lower demand with a ${topMover.changeStr} drop to ${topMover.price}.`;
+        strategy = `Strategy: Wait for confirmation above 74 USD before entry.`;
+      }
+    } else if (topMover.symbol === "BTC") {
+      commentary = `Analysis: BTC leads market direction (${topMover.changeStr} to ${topMover.price}), driving broader altcoin structure.`;
+      strategy = `Strategy: Hold core BTC allocation. Target 66k USD breakout.`;
+    } else {
+      commentary = `Analysis: ETH shows strongest shift (${topMover.changeStr} to ${topMover.price}) across major DeFi primitives.`;
+      strategy = `Strategy: Accumulate ETH dips. Target 2,000 USD expansion.`;
+    }
 
-    // EXCLUSIVE TWEET TYPE 1: Market Analysis, Personal Commentary & Actionable Recommendation ($BTC, $ETH, $SOL, $HYPE)
-    const commentary = hype?.usd_24h_change && hype.usd_24h_change < 0
-      ? `Analysis: BTC holding ${btcPrice} while SOL (${solChange}) shows relative strength. Hyperliquid pullback is a healthy reset.`
-      : `Analysis: BTC (${btcChange}) & SOL (${solChange}) leading momentum. Hyperliquid (${hypePrice}) showing clean expansion.`;
-
-    const strategy = hype?.usd_24h_change && hype.usd_24h_change < 0
-      ? `Strategy: Maintain long bias above 64.5k USD.`
-      : `Strategy: Hold spot positions with long bias. Look for upside continuation across DeAI primitives.`;
-
-    tweetText = `🧠 @Ritual_Agent Market Take:\n• BTC: ${btcPrice} (${btcChange})\n• ETH: ${ethPrice} (${ethChange})\n• SOL: ${solPrice} (${solChange})\n• $HYPE: ${hypePrice} (${hypeChange})\n\n${commentary}\n\n🎯 ${strategy}`;
+    // Direct Tickers + Top Mover Analysis & Strategy (No header text)
+    tweetText = `• BTC: ${assets[0].price} (${assets[0].changeStr})\n• ETH: ${assets[1].price} (${assets[1].changeStr})\n• SOL: ${assets[2].price} (${assets[2].changeStr})\n• $HYPE: ${assets[3].price} (${assets[3].changeStr})\n\n${commentary}\n\n🎯 ${strategy}`;
 
     // Ensure 280-character boundary compliance for standard X accounts
     if (tweetText.length > 280) {
@@ -250,15 +218,39 @@ async function main() {
     console.warn("⚠️ Twitter / X Posting Status:", err.message || err);
   }
 
-  // 6. Record Tweet Post Result On-Chain
-  console.log("\nRecording Tweet Post Result on-chain in MarketAnalystAgent contract...");
+  // 5. Submit Market Data Request & Escrow Lock on Ritual Chain asynchronously
+  console.log("\n⚡ Atomic Batch Skill: Executing Escrow & Precompile Request on Ritual Chain...");
+  const walletAddress = process.env.RITUAL_WALLET || "0x532F0dF0896F353d8C3DD8cc134e8129DA2a3948";
+  const walletAbi = ["function lockUntil(address user) external view returns (uint256)"];
+  const ritualWallet = new ethers.Contract(walletAddress, walletAbi, signer);
+  const eoaLockUntil = await ritualWallet.lockUntil(signer.address).catch(() => 0n);
+
   try {
-    let currentNonce = await signer.getNonce("latest");
-    const recTx = await AgentContract.recordTweetPost(jobId, tweetText, tweetPostedSuccessfully, { nonce: currentNonce, gasLimit: 300000n });
-    await recTx.wait();
-    console.log("✅ On-Chain State Updated & TweetPosted Event Emitted Successfully!");
+    const depositAmount = eoaLockUntil <= BigInt(currentBlock + 500) ? ethers.parseEther("0.5") : 0n;
+
+    let tx;
+    if (typeof AgentContract.executeBatchDataPipeline === "function") {
+      tx = await AgentContract.executeBatchDataPipeline(
+        executorAddress,
+        ttl,
+        apiUrl,
+        [encryptedHex],
+        100000,
+        { value: depositAmount, gasLimit: 1200000n }
+      );
+    } else {
+      tx = await AgentContract.requestMarketData(
+        executorAddress,
+        ttl,
+        apiUrl,
+        [encryptedHex],
+        { gasLimit: 1000000n }
+      );
+    }
+
+    console.log("Atomic Transaction Submitted! TX Hash:", tx.hash);
   } catch (err: any) {
-    console.warn("⚠️ Record tweet post notice:", err.message || err);
+    console.warn("⚠️ On-chain execution notice:", err.message || err);
   }
 
   console.log("\n==================================================");
