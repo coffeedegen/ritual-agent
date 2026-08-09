@@ -256,9 +256,10 @@ async function main() {
   console.log("\n==================================================");
   console.log("🎉 Persistent Market Analyst Agent Pipeline Execution Complete!");
   console.log("==================================================");
+  process.exit(0);
 }
 
 main().catch((error) => {
   console.error(error);
-  process.exitCode = 1;
+  process.exit(1);
 });
